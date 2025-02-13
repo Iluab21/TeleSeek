@@ -1,11 +1,19 @@
 import telebot
+from itertools import cycle
+import os
 from openai import OpenAI
 
-bot = telebot.TeleBot("YOUR_BOT_TOKEN")
+
+bot = telebot.TeleBot(os.getenv('TELEGRAM_KEY'))
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="<OPENROUTER_API_KEY>",
+    api_key=os.getenv('OPENROUTER_KEY'),
 )
+
+models = cycle([
+    "deepseek/deepseek-chat:free", "deepseek/deepseek-r1:free", "deepseek/deepseek-r1-distill-llama-70b:free",
+    ])
+client.active_model = next(models)
 
 
 @bot.message_handler(commands=['start', 'help'])
@@ -14,16 +22,24 @@ def send_welcome(message):
 
 
 @bot.message_handler(func=lambda message: True)
-def echo_all(message):
+def answer_all(message):
     try:
-        bot.send_message(message.chat.id, ask_gpt(message.text))
+        answer = ask_gpt(message.text)
+        if not answer:
+            raise ValueError
+        bot.send_message(message.chat.id, answer)
+
+    except ValueError:
+        client.active_model = next(models)
+        answer_all(message)
+
     except Exception as e:
         bot.send_message(message.chat.id, e)
 
 
 def ask_gpt(message):
     completion = client.chat.completions.create(
-        model="deepseek/deepseek-r1:free",
+        model=client.active_model,
         messages=[
             {
                 "role": "user",
